@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MIDNIGHT SHIFT: Mortimer's Forgotten Diner</title>
+    <meta name="description" content="A point-and-click survival horror game. Survive five nights at Mortimer's Forgotten Diner." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23050505'/%3E%3Ccircle cx='11' cy='15' r='3' fill='%23cfe6ff'/%3E%3Ccircle cx='21' cy='15' r='3' fill='%23cfe6ff'/%3E%3C/svg%3E" />
+    <!-- Fonts are optional: the game falls back to local monospace fonts when offline. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=VT323&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <!-- SVG filter that roughens the title lettering -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <filter id="distress">
+        <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="7" result="n" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="5" />
+      </filter>
+    </svg>
+
+    <div id="viewport">
+      <div id="stage">
+        <canvas id="game" width="1280" height="720"></canvas>
+
+        <!-- Security monitor (camera system) -->
+        <div id="monitor" aria-hidden="true">
+          <canvas id="cam" width="1280" height="720"></canvas>
+          <div id="camMap" aria-label="Camera map"></div>
+        </div>
+
+        <!-- In-game HUD -->
+        <div id="hud" class="hidden">
+          <div id="clock">
+            <div><span id="clockHour">12</span> <span class="ampm">AM</span></div>
+            <div id="nightLabel">NIGHT 1</div>
+          </div>
+          <div id="powerBox">
+            <div>POWER LEFT: <b id="powerPct">100</b>%</div>
+            <div>USAGE: <span id="usageBars"></span></div>
+          </div>
+          <button id="camToggle" data-tip="Raise / lower the security monitor  [SPACE]">
+            <span>&#9650;</span><span class="label">MONITOR</span><span>&#9650;</span>
+          </button>
+          <div id="powerWarning" class="hidden">POWER CRITICAL</div>
+        </div>
+        <div id="tooltip" class="hidden"></div>
+
+        <!-- Tutorial -->
+        <div id="tutorial" class="hidden">
+          <div class="tut-box">
+            <div class="tut-step" id="tutStep">1 / 7</div>
+            <div id="tutText"></div>
+            <div class="tut-actions">
+              <button id="tutNext" class="btn small">NEXT</button>
+              <button id="tutSkip" class="btn small ghost">SKIP TUTORIAL</button>
+            </div>
+          </div>
+        </div>
+
+        <pre id="debug" class="hidden"></pre>
+
+        <!-- ============ SCREENS ============ -->
+        <section id="splash" class="screen">
+          <div class="splash-inner">
+            <p class="warn">WARNING</p>
+            <p>This game contains flashing lights, loud noises and jump scares.<br />Headphones recommended. A reduced-flashing option is available in Settings.</p>
+            <button id="splashStart" class="btn big blink">CLICK TO CLOCK IN</button>
+          </div>
+        </section>
+
+        <section id="menu" class="screen hidden">
+          <div class="menu-left">
+            <h1 class="title" data-text="MIDNIGHT SHIFT">MIDNIGHT SHIFT</h1>
+            <h2 class="subtitle">Mortimer's Forgotten Diner</h2>
+            <nav class="menu-buttons">
+              <button class="btn menu-btn" id="btnNew">New Game</button>
+              <button class="btn menu-btn hidden" id="btnContinue">Continue <span id="continueNight"></span></button>
+              <button class="btn menu-btn" id="btnNights">Select Night</button>
+              <button class="btn menu-btn" id="btnSettings">Settings</button>
+              <button class="btn menu-btn danger" id="btnReset">Reset Progress</button>
+            </nav>
+            <div class="menu-stars" id="menuStars"></div>
+          </div>
+          <div class="menu-foot">v1.0 &middot; F fullscreen &middot; M mute</div>
+        </section>
+
+        <section id="nightSelect" class="screen hidden">
+          <div class="panel">
+            <h2 class="panel-title">SELECT NIGHT</h2>
+            <div id="nightGrid" class="night-grid"></div>
+            <button class="btn" data-back>Back</button>
+          </div>
+        </section>
+
+        <section id="settings" class="screen hidden">
+          <div class="panel settings-panel">
+            <h2 class="panel-title">SETTINGS</h2>
+            <div class="settings-grid">
+              <label>Master volume <input type="range" min="0" max="1" step="0.05" data-set="masterVolume" /></label>
+              <label>Effects volume <input type="range" min="0" max="1" step="0.05" data-set="sfxVolume" /></label>
+              <label>Ambience volume <input type="range" min="0" max="1" step="0.05" data-set="ambienceVolume" /></label>
+              <label class="check"><input type="checkbox" data-set="muted" /> Mute all audio <kbd>M</kbd></label>
+              <label>Visual effects
+                <select data-set="visualEffects">
+                  <option value="full">Full (grain, scanlines, glitches)</option>
+                  <option value="reduced">Reduced</option>
+                  <option value="off">Minimal</option>
+                </select>
+              </label>
+              <label class="check"><input type="checkbox" data-set="reducedFlashing" /> Reduced flashing</label>
+              <label class="check"><input type="checkbox" data-set="screenShake" /> Screen shake</label>
+              <label>Night length
+                <select data-set="nightMinutes" data-number>
+                  <option value="4">4 minutes (quick)</option>
+                  <option value="6">6 minutes</option>
+                  <option value="7">7 minutes (default)</option>
+                  <option value="8">8 minutes</option>
+                </select>
+              </label>
+              <label class="check"><input type="checkbox" data-set="tutorial" /> Show tutorial on Night 1</label>
+              <label class="check"><input type="checkbox" data-set="debug" /> Developer debug overlay</label>
+              <div class="settings-row">
+                <button class="btn small" id="btnFullscreen">Toggle fullscreen <kbd>F</kbd></button>
+              </div>
+            </div>
+            <button class="btn" data-back>Back</button>
+          </div>
+        </section>
+
+        <section id="intro" class="screen hidden">
+          <div class="intro-inner">
+            <div class="intro-time">12:00 AM</div>
+            <div class="intro-night" id="introNight">NIGHT 1</div>
+            <p class="intro-memo" id="introMemo"></p>
+            <div class="intro-hint">click to start your shift</div>
+          </div>
+        </section>
+
+        <section id="pause" class="screen hidden">
+          <div class="panel">
+            <h2 class="panel-title">PAUSED</h2>
+            <button class="btn" id="btnResume">Resume</button>
+            <button class="btn" id="btnRestart">Restart Night</button>
+            <button class="btn" id="btnPauseSettings">Settings</button>
+            <button class="btn" id="btnPauseMenu">Main Menu</button>
+          </div>
+        </section>
+
+        <section id="gameover" class="screen hidden">
+          <div class="gameover-inner">
+            <h2 class="go-title">GAME OVER</h2>
+            <p class="go-killer" id="goKiller"></p>
+            <p class="go-time" id="goTime"></p>
+            <div class="go-buttons">
+              <button class="btn" id="btnRetry">Retry Night</button>
+              <button class="btn" id="btnGoMenu">Main Menu</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="victory" class="screen hidden">
+          <div class="victory-inner">
+            <div class="clock-flip"><span class="digit old">5</span><span class="digit new">6</span><span class="am">AM</span></div>
+            <p class="v-sub" id="vSub">NIGHT 1 COMPLETE</p>
+            <p class="v-text" id="vText"></p>
+            <div class="v-buttons">
+              <button class="btn" id="btnNextNight">Continue to Night 2</button>
+              <button class="btn" id="btnVMenu">Main Menu</button>
+            </div>
+          </div>
+        </section>
+
+        <div id="confirm" class="modal hidden" role="dialog" aria-modal="true">
+          <div class="panel">
+            <p id="confirmText"></p>
+            <div class="confirm-buttons">
+              <button class="btn danger" id="confirmYes">Yes</button>
+              <button class="btn" id="confirmNo">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="fade"></div>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
