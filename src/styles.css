@@ -401,3 +401,67 @@ select {
   60% { transform: translate(-4px, 2px); }
   80% { transform: translate(3px, -1px); }
 }
+
+/* ---------- Phone call ---------- */
+#call {
+  position: absolute;
+  left: 50%;
+  top: 66px;
+  transform: translateX(-50%);
+  width: 620px;
+  z-index: 12;
+  background: rgba(6, 9, 8, 0.86);
+  border: 1px solid rgba(200, 214, 106, 0.35);
+  padding: 10px 16px 10px;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+.call-head { display: flex; align-items: center; gap: 10px; font-family: var(--font-crt); font-size: 20px; color: var(--accent); letter-spacing: 2px; }
+.call-icon { font-size: 22px; }
+.call-time { margin-left: auto; color: var(--ink-dim); }
+#call.ringing .call-icon { animation: ring 0.12s steps(2, start) infinite; display: inline-block; }
+#call.ringing #callWho { animation: blink 0.8s steps(2, start) infinite; }
+#call.ended { opacity: 0.6; transition: opacity 1s; }
+@keyframes ring { 50% { transform: rotate(-14deg); } }
+#callText { margin: 6px 0 8px; font-size: 18px; line-height: 1.45; min-height: 52px; color: var(--ink); }
+#callText.stage { font-style: italic; color: var(--ink-dim); }
+#callMute { pointer-events: auto; font-size: 14px; padding: 3px 10px; }
+#callMute kbd { font-size: 13px; }
+
+/* ---------- Custom night ---------- */
+.custom-panel { width: 1040px; padding: 26px 36px; gap: 12px; }
+.custom-panel .panel-title { margin-bottom: 4px; }
+.custom-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.ai-card {
+  border: 1px solid var(--line);
+  background: rgba(16, 20, 19, 0.75);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 8px 12px;
+  transition: border-color 0.15s;
+}
+.ai-card.hot { border-color: rgba(200, 80, 60, 0.7); }
+.ai-card canvas { width: 200px; height: 150px; background: #050605; }
+.ai-name { margin-top: 6px; font-size: 20px; letter-spacing: 3px; }
+.ai-title { font-size: 13px; color: var(--ink-dim); margin-bottom: 4px; }
+.ai-level { display: flex; align-items: center; gap: 10px; }
+.ai-level b { font-family: var(--font-crt); font-size: 46px; font-weight: normal; width: 52px; text-align: center; line-height: 1; }
+.ai-step { border: 1px solid var(--line); width: 34px; height: 34px; font-size: 22px; text-align: center; padding: 0; }
+.ai-step:hover { border-color: var(--accent); }
+.ai-card input[type='range'] { width: 180px; }
+.custom-row { display: flex; align-items: center; gap: 16px; }
+.custom-label { font-family: var(--font-crt); font-size: 20px; color: var(--ink-dim); width: 110px; letter-spacing: 2px; }
+.custom-mods, .custom-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.mod-btn, .preset-btn { border: 1px solid var(--line); font-size: 15px; padding: 5px 12px; letter-spacing: 1px; }
+.mod-btn small { color: var(--ink-dim); margin-left: 6px; font-family: var(--font-crt); font-size: 16px; }
+.mod-btn.on { border-color: #d05a4a; color: #ffb0a0; background: rgba(120, 30, 20, 0.35); }
+.mod-btn.on small { color: #ff8a70; }
+.preset-btn:hover, .mod-btn:hover { border-color: var(--accent); }
+.custom-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+.custom-score { font-family: var(--font-crt); font-size: 30px; letter-spacing: 2px; }
+.custom-score b { color: var(--accent); font-weight: normal; font-size: 40px; margin-left: 6px; }
+.custom-best { margin-left: 30px; color: var(--ink-dim); font-size: 22px; }
+.custom-best b { color: var(--ink); font-size: 26px; }
+.custom-actions { display: flex; gap: 12px; }
+.custom-start { border: 1px solid var(--accent); color: var(--accent); }

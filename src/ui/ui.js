@@ -3,10 +3,16 @@
 // confirmation dialog, tooltips and the debug overlay.
 // ---------------------------------------------------------------------------
 import { CAMERA_ROOMS, MAP_LAYOUT, ROOMS } from '../world/map.js';
-import { MAX_NIGHT, MAIN_NIGHTS, CHARACTERS } from '../config.js';
+import {
+  MAX_NIGHT, MAIN_NIGHTS, CHARACTERS, CUSTOM_NIGHT, CUSTOM_AI_IDS, CUSTOM_MODIFIERS, CUSTOM_PRESETS,
+  CUSTOM_MAX_SCORE, customScore, normalizeCustom,
+} from '../config.js';
+import { customUnlocked, rememberCustom } from '../core/save.js';
+import { drawHead } from '../render/characters.js';
 
 const $ = (id) => document.getElementById(id);
-const SCREENS = ['splash', 'menu', 'nightSelect', 'settings', 'intro', 'pause', 'gameover', 'victory'];
+const SCREENS = ['splash', 'menu', 'nightSelect', 'custom', 'settings', 'intro', 'pause', 'gameover', 'victory'];
+const nightName = (n) => (n === CUSTOM_NIGHT ? 'CUSTOM NIGHT' : n === MAX_NIGHT ? 'NIGHT 6 - CHALLENGE' : `NIGHT ${n}`);
 
 export class UI {
   /** @param {import('../main.js').Game} game */
@@ -65,6 +71,8 @@ export class UI {
     on('btnNew', () => g.newGame());
     on('btnContinue', () => g.continueGame());
     on('btnNights', () => this.openNightSelect());
+    on('btnCustom', () => this.openCustom());
+    on('btnCustomStart', () => g.startCustomNight(this.customSetup));
     on('btnSettings', () => this.openSettings('menu'));
     on('btnReset', async () => {
       if (await this.confirm('Erase all progress? Unlocked nights and completed nights will be lost. Settings are kept.')) g.resetProgress();
@@ -128,8 +136,135 @@ export class UI {
     const stars = [];
     if (save.completed.includes(MAIN_NIGHTS)) stars.push('★');
     if (save.completed.includes(MAX_NIGHT)) stars.push('★');
+    if (save.custom.best >= CUSTOM_MAX_SCORE) stars.push('★');
     $('menuStars').textContent = stars.join(' ');
+    const custom = $('btnCustom');
+    const unlocked = customUnlocked(save);
+    custom.disabled = !unlocked;
+    custom.textContent = unlocked ? 'Custom Night' : 'Custom Night - locked';
+    custom.title = unlocked ? 'Set every animatronic\'s AI level yourself' : 'Survive Night 5 to unlock';
     this.show('menu');
+  }
+
+  // ── Custom Night ─────────────────────────────────────────────────────────
+
+  openCustom() {
+    const save = this.game.save;
+    if (!customUnlocked(save)) return;
+    this.returnTo = 'menu';
+    this.customSetup = normalizeCustom(save.custom);
+    if (!this.customBuilt) this.buildCustom();
+    this.updateCustom();
+    this.show('custom');
+  }
+
+  buildCustom() {
+    this.customBuilt = true;
+    const g = this.game;
+    const grid = $('customGrid');
+    grid.innerHTML = '';
+    this.aiCards = {};
+    for (const id of CUSTOM_AI_IDS) {
+      const c = CHARACTERS[id];
+      const card = document.createElement('div');
+      card.className = 'ai-card';
+      card.innerHTML = `
+        <canvas width="200" height="150"></canvas>
+        <div class="ai-name">${c.name}</div>
+        <div class="ai-title">${c.title}</div>
+        <div class="ai-level">
+          <button class="btn ai-step" data-d="-1" aria-label="Lower ${c.name}">&minus;</button>
+          <b>0</b>
+          <button class="btn ai-step" data-d="1" aria-label="Raise ${c.name}">+</button>
+        </div>
+        <input type="range" min="0" max="20" step="1" aria-label="${c.name} AI level" />`;
+      const range = card.querySelector('input');
+      const set = (v) => {
+        this.customSetup.ai[id] = Math.max(0, Math.min(20, v));
+        this.updateCustom();
+      };
+      range.addEventListener('input', () => set(Number(range.value)));
+      range.addEventListener('click', (e) => e.stopPropagation());
+      card.querySelectorAll('.ai-step').forEach((b) =>
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          g.audio.click();
+          set(this.customSetup.ai[id] + Number(b.dataset.d));
+        }),
+      );
+      grid.appendChild(card);
+      this.aiCards[id] = { card, range, num: card.querySelector('b'), canvas: card.querySelector('canvas') };
+    }
+
+    const mods = $('customMods');
+    mods.innerHTML = '';
+    this.modButtons = {};
+    for (const m of CUSTOM_MODIFIERS) {
+      const b = document.createElement('button');
+      b.className = 'btn mod-btn';
+      b.title = m.desc;
+      b.innerHTML = `${m.name}<small>+${m.points}</small>`;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        g.audio.click();
+        this.customSetup.mods[m.id] = !this.customSetup.mods[m.id];
+        this.updateCustom();
+      });
+      mods.appendChild(b);
+      this.modButtons[m.id] = b;
+    }
+
+    const presets = $('customPresets');
+    presets.innerHTML = '';
+    for (const p of CUSTOM_PRESETS) {
+      const b = document.createElement('button');
+      b.className = 'btn preset-btn';
+      b.textContent = p.name;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        g.audio.click();
+        this.customSetup = normalizeCustom(p);
+        this.updateCustom();
+      });
+      presets.appendChild(b);
+    }
+    $('custom').querySelectorAll('.btn').forEach((b) => b.addEventListener('mouseenter', () => g.audio.uiHover()));
+  }
+
+  updateCustom() {
+    const setup = this.customSetup;
+    for (const id of CUSTOM_AI_IDS) {
+      const { card, range, num, canvas } = this.aiCards[id];
+      const lvl = setup.ai[id];
+      range.value = String(lvl);
+      num.textContent = String(lvl);
+      card.classList.toggle('hot', lvl >= 15);
+      this.drawPortrait(canvas, id, lvl);
+    }
+    for (const m of CUSTOM_MODIFIERS) this.modButtons[m.id].classList.toggle('on', !!setup.mods[m.id]);
+    $('customScore').textContent = String(customScore(setup));
+    $('customBest').textContent = String(this.game.save.custom.best);
+    rememberCustom(this.game.save, setup);
+  }
+
+  /** Head portrait: dark and dead-eyed at level 0, lit and snarling at 20. */
+  drawPortrait(canvas, id, lvl) {
+    const ctx = canvas.getContext('2d');
+    const k = lvl / 20;
+    ctx.fillStyle = '#050605';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const glow = ctx.createRadialGradient(100, 70, 10, 100, 70, 120);
+    glow.addColorStop(0, `rgba(${60 + 120 * k}, ${50 - 20 * k}, ${40 - 20 * k}, ${0.25 + 0.35 * k})`);
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const y = id === 'runner' ? 82 : 90;
+    drawHead(ctx, id, 100, y, 0.52, {
+      light: 0.12 + 0.95 * k,
+      eyes: lvl === 0 ? 'off' : lvl >= 15 ? 'glow' : 'dim',
+      jaw: 0.6 * k,
+      tilt: (id === 'rabbit' ? 0.12 : id === 'bird' ? -0.1 : 0) * (0.3 + k),
+    });
   }
 
   openNightSelect() {
@@ -216,7 +351,7 @@ export class UI {
   // ── Night intro / results ────────────────────────────────────────────────
 
   showIntro(night, memo) {
-    $('introNight').textContent = night === MAX_NIGHT ? 'NIGHT 6 - CHALLENGE' : `NIGHT ${night}`;
+    $('introNight').textContent = nightName(night);
     $('introMemo').textContent = '';
     this.show('intro');
     // typewriter memo
@@ -232,20 +367,27 @@ export class UI {
     const c = CHARACTERS[killer];
     $('goKiller').textContent = c ? `CAUGHT BY ${c.name}` : '';
     const hour = session.displayHour;
-    $('goTime').textContent = `Night ${session.night} · survived until ${hour} AM · ${Math.ceil(session.power)}% power left`;
+    const label = session.night === CUSTOM_NIGHT ? `Custom Night (${customScore(session.cfg)} pts)` : `Night ${session.night}`;
+    $('goTime').textContent = `${label} · survived until ${hour} AM · ${Math.ceil(session.power)}% power left`;
     this.show('gameover');
   }
 
-  showVictory(night, unlockedNext) {
-    $('vSub').textContent = `NIGHT ${night} COMPLETE`;
+  /** @param {{score:number, best:number, isBest:boolean}} [customResult] */
+  showVictory(night, unlockedNext, customResult) {
+    $('vSub').textContent = `${nightName(night)} COMPLETE`;
     let text = '';
-    if (night === MAIN_NIGHTS) text = "You made it through the week. Your paycheck: $120.50 and a coupon for a free slice of pizza. Something in Storage is still awake... CHALLENGE NIGHT UNLOCKED.";
+    if (customResult) {
+      const { score, best, isBest } = customResult;
+      text = score >= CUSTOM_MAX_SCORE
+        ? `20/20/20/20 with every modifier. ${score} points. Mortimer would like a word with you. ★`
+        : `Score: ${score} points. ${isBest ? 'NEW BEST!' : `Best: ${best}.`}`;
+    } else if (night === MAIN_NIGHTS) text = "You made it through the week. Your paycheck: $120.50 and a coupon for a free slice of pizza. Something in Storage is still awake... CHALLENGE NIGHT UNLOCKED.";
     else if (night === MAX_NIGHT) text = "Nobody has ever lasted this long. The diner is quiet. For now. Thank you for playing.";
     else if (unlockedNext) text = `Night ${night + 1} unlocked. Progress saved.`;
     $('vText').textContent = text;
     const next = $('btnNextNight');
-    next.classList.toggle('hidden', night >= MAX_NIGHT);
-    next.textContent = night === MAIN_NIGHTS ? 'Attempt the Challenge Night' : `Continue to Night ${night + 1}`;
+    next.classList.toggle('hidden', night === MAX_NIGHT);
+    next.textContent = customResult ? 'Back to Custom Night' : night === MAIN_NIGHTS ? 'Attempt the Challenge Night' : `Continue to Night ${night + 1}`;
     // restart CSS animations
     const v = $('victory');
     v.querySelectorAll('.digit, .v-sub, .v-text, .v-buttons').forEach((el) => {
@@ -267,7 +409,7 @@ export class UI {
 
   updateHud(session) {
     $('clockHour').textContent = String(session.displayHour);
-    $('nightLabel').textContent = `NIGHT ${session.night}`;
+    $('nightLabel').textContent = session.night === CUSTOM_NIGHT ? 'CUSTOM' : `NIGHT ${session.night}`;
     const p = Math.max(0, Math.ceil(session.power));
     $('powerPct').textContent = String(p);
     $('powerBox').classList.toggle('low', p <= 15);

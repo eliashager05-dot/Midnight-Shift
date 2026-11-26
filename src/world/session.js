@@ -9,19 +9,21 @@
 import { CONFIG, getNightConfig } from '../config.js';
 import { Emitter } from '../core/emitter.js';
 import { createRng } from '../core/rng.js';
-import { ROOMS, DOOR_ROOM } from './map.js';
+import { ROOMS, DOOR_ROOM, CAMERA_ROOMS } from './map.js';
 import { Bear, Rabbit, Bird, Runner } from '../ai/characters.js';
 import { AIState } from '../ai/animatronic.js';
 
 export class NightSession extends Emitter {
   /**
-   * @param {{night:number, nightSeconds?:number, seed?:number, frozen?:boolean}} opts
+   * @param {{night:number, nightSeconds?:number, seed?:number, frozen?:boolean, custom?:object}} opts
+   *   custom: {ai, mods} slider setup, only used for the Custom Night
    */
-  constructor({ night, nightSeconds = CONFIG.defaultNightMinutes * 60, seed, frozen = false }) {
+  constructor({ night, nightSeconds = CONFIG.defaultNightMinutes * 60, seed, frozen = false, custom }) {
     super();
     this.night = night;
-    this.cfg = getNightConfig(night);
+    this.cfg = getNightConfig(night, custom);
     this.rng = createRng(seed);
+    this.wiringTimer = this.cfg.wiring ? this.rng.range(8, 16) : Infinity;
     this.nightSeconds = nightSeconds;
     this.time = 0;
     this.hour = 0;
@@ -240,6 +242,12 @@ export class NightSession extends Emitter {
     for (const k in this.camDisrupt) if ((this.camDisrupt[k] -= dt) <= 0) delete this.camDisrupt[k];
     for (const k in this.camOffline) if ((this.camOffline[k] -= dt) <= 0) delete this.camOffline[k];
     if (this.peek && (this.peek.t -= dt) <= 0) this.peek = null;
+
+    // Custom Night "Faulty Wiring": random camera outages.
+    if ((this.wiringTimer -= dt) <= 0 && this.state === 'running') {
+      this.wiringTimer = this.rng.range(9, 20);
+      this.setCamOffline(this.rng.pick(CAMERA_ROOMS), this.rng.range(3, 6));
+    }
 
     this.stats.timeSinceCams = o.monitorUp ? 0 : this.stats.timeSinceCams + dt;
     for (const side of ['left', 'right']) {

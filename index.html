@@ -48,6 +48,17 @@
         </div>
         <div id="tooltip" class="hidden"></div>
 
+        <!-- Phone call subtitles -->
+        <div id="call" class="hidden" aria-live="polite">
+          <div class="call-head">
+            <span class="call-icon">&#9742;</span>
+            <span id="callWho">INCOMING CALL</span>
+            <span id="callTime" class="call-time"></span>
+          </div>
+          <p id="callText"></p>
+          <button id="callMute" class="btn small">MUTE CALL <kbd>H</kbd></button>
+        </div>
+
         <!-- Tutorial -->
         <div id="tutorial" class="hidden">
           <div class="tut-box">
@@ -79,6 +90,7 @@
               <button class="btn menu-btn" id="btnNew">New Game</button>
               <button class="btn menu-btn hidden" id="btnContinue">Continue <span id="continueNight"></span></button>
               <button class="btn menu-btn" id="btnNights">Select Night</button>
+              <button class="btn menu-btn" id="btnCustom">Custom Night</button>
               <button class="btn menu-btn" id="btnSettings">Settings</button>
               <button class="btn menu-btn danger" id="btnReset">Reset Progress</button>
             </nav>
@@ -92,6 +104,28 @@
             <h2 class="panel-title">SELECT NIGHT</h2>
             <div id="nightGrid" class="night-grid"></div>
             <button class="btn" data-back>Back</button>
+          </div>
+        </section>
+
+        <section id="custom" class="screen hidden">
+          <div class="panel custom-panel">
+            <h2 class="panel-title">CUSTOM NIGHT</h2>
+            <div id="customGrid" class="custom-grid"></div>
+            <div class="custom-row">
+              <span class="custom-label">MODIFIERS</span>
+              <div id="customMods" class="custom-mods"></div>
+            </div>
+            <div class="custom-row">
+              <span class="custom-label">PRESETS</span>
+              <div id="customPresets" class="custom-presets"></div>
+            </div>
+            <div class="custom-foot">
+              <div class="custom-score">SCORE <b id="customScore">0</b><span class="custom-best">BEST <b id="customBest">0</b></span></div>
+              <div class="custom-actions">
+                <button class="btn" data-back>Back</button>
+                <button class="btn custom-start" id="btnCustomStart">Start Night &#9656;</button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -121,6 +155,7 @@
                 </select>
               </label>
               <label class="check"><input type="checkbox" data-set="tutorial" /> Show tutorial on Night 1</label>
+              <label class="check"><input type="checkbox" data-set="phoneCalls" /> Phone calls at the start of each night</label>
               <label class="check"><input type="checkbox" data-set="debug" /> Developer debug overlay</label>
               <div class="settings-row">
                 <button class="btn small" id="btnFullscreen">Toggle fullscreen <kbd>F</kbd></button>

@@ -2,7 +2,7 @@
 // Progression + settings persistence (localStorage). Every read is validated,
 // so missing, partial or corrupted data falls back to sane defaults.
 // ---------------------------------------------------------------------------
-import { DEFAULT_SETTINGS, MAX_NIGHT, CONFIG } from '../config.js';
+import { DEFAULT_SETTINGS, MAX_NIGHT, MAIN_NIGHTS, CONFIG, DEFAULT_CUSTOM, CUSTOM_MAX_SCORE, normalizeCustom, customScore } from '../config.js';
 
 const KEY = 'midnightshift.save.v1';
 
@@ -14,6 +14,7 @@ function defaults() {
     completed: [], // nights that have been beaten
     tutorialDone: false,
     settings: { ...DEFAULT_SETTINGS },
+    custom: { ...normalizeCustom(DEFAULT_CUSTOM), best: 0, wins: 0 }, // Custom Night setup + high score
   };
 }
 
@@ -54,9 +55,40 @@ export function sanitizeSave(raw) {
     screenShake: typeof s.screenShake === 'boolean' ? s.screenShake : ds.screenShake,
     nightMinutes: CONFIG.nightLengthOptions.includes(s.nightMinutes) ? s.nightMinutes : ds.nightMinutes,
     tutorial: typeof s.tutorial === 'boolean' ? s.tutorial : ds.tutorial,
+    phoneCalls: typeof s.phoneCalls === 'boolean' ? s.phoneCalls : ds.phoneCalls,
     debug: typeof s.debug === 'boolean' ? s.debug : ds.debug,
   };
+
+  const c = raw.custom && typeof raw.custom === 'object' ? raw.custom : {};
+  out.custom = {
+    ...normalizeCustom(c),
+    best: clampInt(c.best, 0, CUSTOM_MAX_SCORE, 0),
+    wins: clampInt(c.wins, 0, 1e6, 0),
+  };
   return out;
+}
+
+/** Custom Night unlocks after beating the main week (or in debug mode). */
+export function customUnlocked(save) {
+  return save.completed.includes(MAIN_NIGHTS) || save.settings.debug === true;
+}
+
+/** Remember the last slider setup so the screen reopens where you left it. */
+export function rememberCustom(save, custom) {
+  const c = normalizeCustom(custom);
+  save.custom.ai = c.ai;
+  save.custom.mods = c.mods;
+  writeSave(save);
+}
+
+/** Record a survived Custom Night. Returns {score, best, isBest}. */
+export function recordCustomWin(save, custom) {
+  const score = customScore(custom);
+  const isBest = score > save.custom.best;
+  if (isBest) save.custom.best = score;
+  save.custom.wins++;
+  writeSave(save);
+  return { score, best: save.custom.best, isBest };
 }
 
 export function loadSave() {

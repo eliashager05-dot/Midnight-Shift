@@ -83,9 +83,91 @@ export const NIGHTS = {
 export const MAX_NIGHT = 6;
 export const MAIN_NIGHTS = 5;
 
-export function getNightConfig(night) {
+/** Night number used for the player-configured Custom Night. */
+export const CUSTOM_NIGHT = 7;
+
+export function getNightConfig(night, custom) {
+  if (night === CUSTOM_NIGHT) return buildCustomConfig(custom);
   const n = Math.max(1, Math.min(MAX_NIGHT, night | 0));
   return { night: n, hourBonus: HOUR_BONUS, ...NIGHTS[n] };
+}
+
+// ── Custom Night ───────────────────────────────────────────────────────────
+
+export const CUSTOM_AI_IDS = ['bear', 'rabbit', 'bird', 'runner'];
+
+export const CUSTOM_MODIFIERS = [
+  { id: 'surge', name: 'Power Surge', desc: 'Power drains 30% faster.', points: 150 },
+  { id: 'wiring', name: 'Faulty Wiring', desc: 'Cameras cut out at random.', points: 100 },
+  { id: 'restless', name: 'Restless', desc: 'Everyone gains +1 AI level every hour.', points: 150 },
+];
+
+export const CUSTOM_PRESETS = [
+  { name: 'Quiet Night', ai: { bear: 2, rabbit: 3, bird: 3, runner: 2 }, mods: {} },
+  { name: 'Last Week', ai: { ...NIGHTS[5].ai }, mods: {} },
+  { name: 'Kennel', ai: { bear: 0, rabbit: 0, bird: 0, runner: 20 }, mods: {} },
+  { name: 'Feathers & Fur', ai: { bear: 0, rabbit: 16, bird: 16, runner: 0 }, mods: { wiring: true } },
+  { name: 'Showtime', ai: { bear: 20, rabbit: 5, bird: 5, runner: 5 }, mods: { restless: true } },
+  { name: '20/20/20/20', ai: { bear: 20, rabbit: 20, bird: 20, runner: 20 }, mods: { surge: true, wiring: true, restless: true } },
+];
+
+export const DEFAULT_CUSTOM = { ai: { bear: 5, rabbit: 5, bird: 5, runner: 5 }, mods: {} };
+
+const clampLevel = (v) => (Number.isFinite(v) ? Math.max(0, Math.min(20, Math.round(v))) : 0);
+
+/** Normalise any (possibly broken) custom setup into {ai, mods}. */
+export function normalizeCustom(custom) {
+  const ai = {};
+  for (const id of CUSTOM_AI_IDS) ai[id] = clampLevel(custom?.ai?.[id] ?? DEFAULT_CUSTOM.ai[id]);
+  const mods = {};
+  for (const m of CUSTOM_MODIFIERS) mods[m.id] = custom?.mods?.[m.id] === true;
+  return { ai, mods };
+}
+
+/** Score for surviving a custom setup: 10 points per AI level + modifier bonuses. */
+export function customScore(custom) {
+  const c = normalizeCustom(custom);
+  let score = CUSTOM_AI_IDS.reduce((sum, id) => sum + c.ai[id] * 10, 0);
+  for (const m of CUSTOM_MODIFIERS) if (c.mods[m.id]) score += m.points;
+  return score;
+}
+
+export const CUSTOM_MAX_SCORE = 20 * 10 * CUSTOM_AI_IDS.length + CUSTOM_MODIFIERS.reduce((s, m) => s + m.points, 0);
+
+/** Short description of a custom setup (used for the intro card). */
+export function describeCustom(custom) {
+  const c = normalizeCustom(custom);
+  const levels = CUSTOM_AI_IDS.map((id) => `${CHARACTERS[id].name} ${c.ai[id]}`).join('  ·  ');
+  const mods = CUSTOM_MODIFIERS.filter((m) => c.mods[m.id]).map((m) => m.name.toUpperCase());
+  return `${levels}${mods.length ? `  ·  ${mods.join(' + ')}` : ''}.  Worth ${customScore(c)} points if you see 6 AM.`;
+}
+
+const lerp = (a, b, k) => a + (b - a) * k;
+
+/**
+ * Derive a full night config from slider values. Timings (door linger, Scraps'
+ * sprint, ...) scale between the Night 1 and Challenge Night values.
+ */
+export function buildCustomConfig(custom) {
+  const { ai, mods } = normalizeCustom(custom);
+  const avg = CUSTOM_AI_IDS.reduce((s, id) => s + ai[id], 0) / (20 * CUSTOM_AI_IDS.length);
+  const hourBonus = {};
+  if (mods.restless) for (let h = 1; h <= 5; h++) hourBonus[h] = { bear: 1, rabbit: 1, bird: 1, runner: 1 };
+  return {
+    night: CUSTOM_NIGHT,
+    custom: true,
+    ai,
+    mods,
+    hourBonus,
+    drainMult: mods.surge ? 1.3 : 1.0,
+    linger: lerp(12, 6, avg),
+    bearLinger: lerp(18, 8, ai.bear / 20),
+    runnerCharge: lerp(4.4, 2.7, ai.runner / 20),
+    runnerIgnore: lerp(75, 30, ai.runner / 20),
+    flank: avg >= 0.3,
+    wiring: mods.wiring,
+    memo: describeCustom({ ai, mods }),
+  };
 }
 
 export const DEFAULT_SETTINGS = {
@@ -98,5 +180,6 @@ export const DEFAULT_SETTINGS = {
   screenShake: true,
   nightMinutes: 7,
   tutorial: true,
+  phoneCalls: true,
   debug: false,
 };

@@ -3,8 +3,8 @@
 // Owns the screen state machine, the main loop, input handling and the wiring
 // between the simulation (NightSession), renderers, audio and UI.
 // ---------------------------------------------------------------------------
-import { CONFIG, VIEW_W, VIEW_H, MAX_NIGHT, getNightConfig } from './config.js';
-import { loadSave, writeSave, recordNightComplete, resetProgress } from './core/save.js';
+import { CONFIG, VIEW_W, VIEW_H, MAX_NIGHT, CUSTOM_NIGHT, getNightConfig, normalizeCustom } from './config.js';
+import { loadSave, writeSave, recordNightComplete, recordCustomWin, resetProgress } from './core/save.js';
 import { NightSession } from './world/session.js';
 import { ROOMS, CAMERA_ROOMS } from './world/map.js';
 import { AIState } from './ai/animatronic.js';
@@ -16,9 +16,10 @@ import { MenuBackdrop, GameOverBackdrop, DawnBackdrop } from './render/backdrops
 import { AudioEngine } from './audio/audio.js';
 import { UI } from './ui/ui.js';
 import { Tutorial } from './ui/tutorial.js';
+import { PhoneCall } from './ui/phone.js';
 
 const $ = (id) => document.getElementById(id);
-const MENU_SCREENS = ['menu', 'nightSelect', 'settings', 'splash'];
+const MENU_SCREENS = ['menu', 'nightSelect', 'custom', 'settings', 'splash'];
 
 export class Game {
   constructor() {
@@ -45,11 +46,13 @@ export class Game {
     this.audio.applySettings(this.save.settings);
     this.ui = new UI(this);
     this.tutorial = new Tutorial(this);
+    this.phone = new PhoneCall(this);
 
     this.mode = 'splash'; // splash | menu | intro | playing | jumpscare | gameover | victory
     this.paused = false;
     this.session = null;
     this.night = 1;
+    this.custom = null; // {ai, mods} while playing the Custom Night
     this.mouse = { x: null, y: null };
     this.t = 0;
     this.last = performance.now();
@@ -112,11 +115,19 @@ export class Game {
   }
 
   nextNight() {
+    if (this.night === CUSTOM_NIGHT) {
+      this.toMenu();
+      return this.ui.openCustom();
+    }
     this.startNight(Math.min(MAX_NIGHT, this.night + 1));
   }
 
+  startCustomNight(setup) {
+    this.startNight(CUSTOM_NIGHT, setup);
+  }
+
   restartNight() {
-    this.startNight(this.night);
+    this.startNight(this.night, this.custom);
   }
 
   resetProgress() {
@@ -127,6 +138,7 @@ export class Game {
   endSession() {
     this.audio.stopMusicBox();
     this.audio.stopLoop('gameover', 0.2);
+    this.phone.stop();
     if (this.session) this.session = null;
     if (this.tutorial.active) {
       this.tutorial.active = false;
@@ -136,15 +148,16 @@ export class Game {
   }
 
   /** Show the night card; the shift begins on click. */
-  startNight(n) {
+  startNight(n, custom = null) {
     this.endSession();
     this.night = n;
+    this.custom = n === CUSTOM_NIGHT ? normalizeCustom(custom) : null;
     this.paused = false;
     this.mode = 'intro';
     this.audio.stopAll(0.4);
     this.ui.setHud(false);
     this.ui.resetMonitor();
-    const cfg = getNightConfig(n);
+    const cfg = getNightConfig(n, this.custom);
     this.ui.fade(() => {
       this.ui.showIntro(n, cfg.memo);
       this.audio.tone({ type: 'sine', freq: 55, freqEnd: 40, dur: 2.5, gain: 0.2, a: 0.5, wet: 0.6 });
@@ -164,6 +177,7 @@ export class Game {
       nightSeconds: s.nightMinutes * 60,
       seed: this.fixedSeed,
       frozen: useTutorial,
+      custom: this.custom,
     });
     this.wireSession(session);
     this.session = session;
@@ -176,7 +190,13 @@ export class Game {
       this.ui.resetMonitor();
       this.audio.officeAmbience();
       if (useTutorial) this.tutorial.start();
+      else this.startPhoneCall();
     }, 400);
+  }
+
+  /** Ring the desk phone with tonight's call (if enabled and there is one). */
+  startPhoneCall() {
+    if (this.save.settings.phoneCalls && this.session && !this.session.ended) this.phone.start(this.night);
   }
 
   onTutorialDone(skipped) {
@@ -184,6 +204,7 @@ export class Game {
     writeSave(this.save);
     if (this.session) this.session.frozen = false;
     if (!skipped) this.audio.sting(0.12);
+    this.startPhoneCall();
   }
 
   pause() {
@@ -295,6 +316,7 @@ export class Game {
     });
     s.on('enteredOffice', () => A.servo(0, 0.02));
     s.on('powerOut', () => {
+      this.phone.stop();
       A.powerDown();
       this.ui.setMonitor(false);
       this.ui.hideTooltip();
@@ -306,6 +328,7 @@ export class Game {
   }
 
   onJumpscare(id) {
+    this.phone.stop();
     this.mode = 'jumpscare';
     this.ui.setHud(false);
     this.ui.resetMonitor();
@@ -322,7 +345,9 @@ export class Game {
     this.ui.setHud(false);
     this.ui.resetMonitor();
     this.ui.hideTooltip();
+    this.phone.stop();
     this.audio.victory();
+    if (night === CUSTOM_NIGHT) return this.ui.showVictory(night, false, recordCustomWin(this.save, this.custom));
     const before = this.save.unlockedNight;
     this.save = recordNightComplete(this.save, night);
     this.ui.showVictory(night, this.save.unlockedNight > before);
@@ -388,6 +413,7 @@ export class Game {
     this.audio.applySettings(this.save.settings);
     if (key === 'visualEffects') this.fx.setLevel(value);
     if (key === 'debug' && !value) this.ui.setDebug(null);
+    if (key === 'phoneCalls' && !value) this.phone.stop();
   }
 
   toggleMute() {
@@ -432,7 +458,7 @@ export class Game {
         e.preventDefault();
         if (this.ui.confirmOpen) return this.ui.confirmOpen(false);
         if (this.mode === 'playing') return this.togglePause();
-        if (['settings', 'nightSelect'].includes(this.ui.current)) return this.ui.back();
+        if (['settings', 'nightSelect', 'custom'].includes(this.ui.current)) return this.ui.back();
         return;
       }
       if (inForm || e.repeat) return;
@@ -445,6 +471,7 @@ export class Game {
         e.preventDefault();
         return this.toggleMonitor();
       }
+      if (k === 'h') return this.phone.mute();
       if (/^[1-8]$/.test(k) && this.session.office.monitorUp) return this.selectCam(CAMERA_ROOMS[Number(k) - 1]);
       if (this.officeInteractive) {
         const map = { q: 'leftDoor', e: 'rightDoor', a: 'leftLight', d: 'rightLight' };
@@ -513,6 +540,7 @@ export class Game {
     const s = this.session;
     s.update(dt);
     if (this.mode !== 'playing') return; // night ended inside update
+    this.phone.update(dt);
     // look around (mouse at edges / arrow keys)
     if (!s.office.monitorUp) {
       this.office.updatePan(dt, this.mouse.x, true);

@@ -52,6 +52,7 @@ audio cues matter.
 | Click **LIGHT** buttons (or `A` / `D`) | Toggle the left / right hallway light |
 | Click the **MONITOR** bar (or `Space`) | Raise / lower the security monitor |
 | Click **CAM** buttons on the map (or `1` to `8`) | Switch camera |
+| `H` (or **MUTE CALL**) | Hang up the phone call |
 | `Esc` | Pause menu (Resume, Restart Night, Settings, Main Menu) |
 | `F` | Toggle fullscreen |
 | `M` | Mute / unmute |
@@ -100,13 +101,38 @@ sees, reacts with a human-like delay, and doesn't use every trick:
 | --- | --- | --- | --- | --- | --- | --- |
 | Bot win rate | 100% | 100% | ~99% | ~90% | ~45% | ~10% |
 
+### Phone calls
+
+A couple of seconds into every story night (after the tutorial on Night 1) the desk phone rings.
+Walt, the previous night guard, talks you through that night's new threat. The story runs through
+the calls, and they don't stay friendly. The voice is synthesized babble passed through a telephone
+filter, with typed subtitles at the top of the screen. The night keeps running while he talks. Press
+`H` or click **MUTE CALL** to hang up, or turn calls off entirely in Settings. Scripts live in
+`src/story/calls.js`.
+
+### Custom Night
+
+Beating Night 5 unlocks **Custom Night** in the main menu. Set each animatronic's AI level from 0
+(switched off) to 20, and stack modifiers:
+
+| Modifier | Effect | Points |
+| --- | --- | --- |
+| Power Surge | Power drains 30% faster | +150 |
+| Faulty Wiring | Cameras cut out at random | +100 |
+| Restless | Everyone gains +1 AI level every hour | +150 |
+
+Surviving scores 10 points per AI level plus the modifier bonuses. The maximum is 1200: 20/20/20/20
+with every modifier, and beating it earns a menu star. Door wait times and Scraps' sprint speed
+scale with the levels you pick. Presets give quick starting points. Your last setup and best score
+are saved.
+
 ---
 
 ## Settings
 
 Master / effects / ambience volume, mute, visual effects level (full / reduced / minimal grain,
 scanlines and glitches), **reduced flashing** (replaces jumpscare flashes with dark pulses), screen
-shake, night length, Night 1 tutorial on/off, developer debug overlay, and fullscreen.
+shake, night length, Night 1 tutorial on/off, phone calls on/off, developer debug overlay, and fullscreen.
 **Reset Progress** asks for confirmation and keeps your settings.
 
 ## Debug mode
@@ -117,7 +143,7 @@ rate, the clock and the RNG seed. Debug keys while playing:
 
 `]` skip an hour, `P` set power to 3%, `O` restore power, `V` jump to 6 AM, `K` force a death, `R` force Scraps to sprint.
 
-Add `?seed=1234` to make animatronic behaviour reproducible.
+Add `?seed=1234` to make animatronic behaviour reproducible. Debug mode also unlocks Custom Night.
 
 ---
 
@@ -127,7 +153,8 @@ Add `?seed=1234` to make animatronic behaviour reproducible.
 index.html              DOM shell: canvases, HUD, menus, dialogs
 src/
   main.js               Game controller: screen state machine, main loop, input, event wiring
-  config.js             All tunables: night difficulty tables, power, timings, default settings
+  config.js             All tunables: night difficulty tables, power, timings, default settings,
+                        Custom Night modifiers / presets / scoring
   styles.css            Presentation (fixed 1280x720 stage scaled to the window)
   core/
     rng.js              Seeded PRNG (mulberry32)
@@ -150,10 +177,13 @@ src/
     effects.js          Grain, static, scanlines, vignette, tearing
     backdrops.js        Menu / game-over / dawn backgrounds
   audio/
-    audio.js            Web Audio synth: ambience beds, positional SFX, music box, screams
+    audio.js            Web Audio synth: ambience beds, positional SFX, music box, screams, phone voices
+  story/
+    calls.js            Per-night phone call scripts (lines, stage directions, sound cues)
   ui/
-    ui.js               Menus, settings, HUD, camera map, tooltips, confirm dialog, debug panel
+    ui.js               Menus, Custom Night screen, settings, HUD, camera map, tooltips, confirm dialog, debug panel
     tutorial.js         Interactive first-night tutorial (freezes the night until finished)
+    phone.js            Phone call player: ringing, typed subtitles, synced voice, mute
 scripts/
   simulate.js           Headless balance simulator (bot player)
   check.js              Headless invariant tests

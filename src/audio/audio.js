@@ -717,4 +717,189 @@ export class AudioEngine {
     this.tone({ type: 'sine', freq: 900, freqEnd: 1500, dur: 0.12, gain: 0.1 });
     this.tone({ type: 'sine', freq: 1400, freqEnd: 800, dur: 0.15, gain: 0.08, delay: 0.12 });
   }
+
+  // ── Phone calls ──────────────────────────────────────────────────────────
+  // The desk phone sits slightly right of centre. Voices are not speech: they
+  // are formant-filtered "babble" syllables squeezed through a telephone band,
+  // timed to the subtitles.
+
+  static PHONE_VOICES = {
+    walt: { pitch: 128, syl: [0.08, 0.17], gain: 0.9, formant: 1, warble: 0.012, drive: 14 },
+    bear: { pitch: 84, syl: [0.13, 0.24], gain: 1.0, formant: 0.8, warble: 0.05, drive: 24 },
+    bearSlow: { pitch: 58, syl: [0.26, 0.42], gain: 1.0, formant: 0.7, warble: 0.08, drive: 24, sag: 0.35 },
+    ghost: { pitch: 116, syl: [0.1, 0.2], gain: 0.75, formant: 0.95, warble: 0.03, drive: 60, dropout: 0.28 },
+  };
+
+  static VOWELS = [[730, 1090], [270, 2290], [530, 1840], [570, 840], [300, 870], [660, 1720], [440, 1020]];
+
+  /** One old-fashioned bell ring (~1.5 s). */
+  phoneRing(pan = 0.3) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime, dur = 1.5;
+    const g = ctx.createGain();
+    this.env(g.gain, t, { a: 0.01, peak: 0.08, hold: dur - 0.25, d: 0.25 });
+    const trem = ctx.createGain();
+    trem.gain.value = 0.5;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'square';
+    lfo.frequency.value = 21;
+    const lg = ctx.createGain();
+    lg.gain.value = 0.5;
+    lfo.connect(lg);
+    lg.connect(trem.gain);
+    const oscs = [lfo];
+    for (const [f, a] of [[1046, 1], [1318, 0.7], [2620, 0.25]]) {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = f * (0.995 + Math.random() * 0.01);
+      const og = ctx.createGain();
+      og.gain.value = a;
+      o.connect(og);
+      og.connect(trem);
+      oscs.push(o);
+    }
+    trem.connect(g);
+    g.connect(this.out({ pan, wet: 0.35 }));
+    for (const o of oscs) {
+      o.start(t);
+      o.stop(t + dur + 0.1);
+    }
+  }
+
+  phonePickup(pan = 0.3) {
+    this.click();
+    this.noise({ dur: 0.12, gain: 0.12, type: 'lowpass', freq: 900, pan });
+    this.tone({ type: 'sine', freq: 140, freqEnd: 70, dur: 0.1, gain: 0.15, pan });
+  }
+
+  phoneHangup(pan = 0.3) {
+    this.click();
+    this.noise({ dur: 0.08, gain: 0.1, type: 'bandpass', freq: 1500, pan });
+    this.tone({ type: 'sine', freq: 425, dur: 0.25, gain: 0.03, pan, delay: 0.3, filter: { type: 'bandpass', freq: 425, Q: 2 } });
+  }
+
+  /** Open the line: telephone-band filter + distortion + faint hiss. */
+  startPhoneLine(voice = 'walt', pan = 0.3) {
+    const V = AudioEngine.PHONE_VOICES[voice] ?? AudioEngine.PHONE_VOICES.walt;
+    return this.startLoop('phone', (ctx, m) => {
+      m.connect(this.out({ pan, gain: 1, wet: 0.08 }));
+      const input = ctx.createGain();
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 340;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 3200;
+      const ws = this.distortion(V.drive);
+      input.connect(hp);
+      hp.connect(lp);
+      lp.connect(ws);
+      ws.connect(m);
+      const hiss = this.loopNoise(ctx, m, { type: 'bandpass', freq: 2400, Q: 0.6, gain: 0.014 });
+      return { sources: [hiss.src], input };
+    });
+  }
+
+  stopPhone() {
+    this.stopLoop('phone', 0.08);
+  }
+
+  /** Schedule babble syllables for `duration` seconds on the open line. */
+  phoneSpeak(duration, voice = 'walt') {
+    const line = this.loops.get('phone');
+    const ctx = this.ctx;
+    if (!ctx || !line) return;
+    const V = AudioEngine.PHONE_VOICES[voice] ?? AudioEngine.PHONE_VOICES.walt;
+    const rand = (a, b) => a + Math.random() * (b - a);
+    const start = ctx.currentTime + 0.04;
+    const end = start + duration - 0.15;
+    let t = start;
+    while (t < end) {
+      const dur = rand(V.syl[0], V.syl[1]);
+      const k = (t - start) / duration; // phrase position: pitch falls toward the end
+      const f0 = V.pitch * (1.12 - 0.22 * k - (V.sag ?? 0) * k) * rand(0.92, 1.08);
+      if (!(V.dropout && Math.random() < V.dropout)) this.syllable(line.nodes.input, t, dur, f0, V);
+      t += dur + (Math.random() < 0.22 ? rand(0.12, 0.24) : rand(0.015, 0.05));
+    }
+  }
+
+  syllable(input, t, dur, f0, V) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0 * 1.04, t);
+    o.frequency.linearRampToValueAtTime(f0 * 0.95, t + dur);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 5 + Math.random() * 2;
+    const vg = ctx.createGain();
+    vg.gain.value = f0 * V.warble;
+    vib.connect(vg);
+    vg.connect(o.frequency);
+    const g = ctx.createGain();
+    this.env(g.gain, t, { a: 0.02, peak: V.gain, hold: dur * 0.55, d: dur * 0.45 });
+    const [F1, F2] = AudioEngine.VOWELS[Math.floor(Math.random() * AudioEngine.VOWELS.length)];
+    for (const [f, q, a] of [[F1 * V.formant, 5, 1.4], [F2 * V.formant, 7, 0.9]]) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = q;
+      const bg = ctx.createGain();
+      bg.gain.value = a;
+      o.connect(bp);
+      bp.connect(bg);
+      bg.connect(g);
+    }
+    g.connect(input);
+    o.start(t);
+    vib.start(t);
+    o.stop(t + dur + 0.1);
+    vib.stop(t + dur + 0.1);
+    // consonant onset
+    if (Math.random() < 0.5) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.white;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 2200 + Math.random() * 1500;
+      const ng = ctx.createGain();
+      this.env(ng.gain, t, { a: 0.003, peak: V.gain * 0.35, d: 0.045 });
+      src.connect(hp);
+      hp.connect(ng);
+      ng.connect(input);
+      src.start(t, Math.random() * 2);
+      src.stop(t + 0.08);
+    }
+  }
+
+  /** Sound effects heard through (or around) the phone. */
+  phoneFx(kind, pan = 0.3) {
+    switch (kind) {
+      case 'bang':
+        for (let i = 0; i < 5; i++) {
+          const d = i * 0.32 + Math.random() * 0.08;
+          this.tone({ type: 'sine', freq: 90, freqEnd: 45, dur: 0.25, gain: 0.22, pan, delay: d });
+          this.noise({ dur: 0.18, gain: 0.2, type: 'bandpass', freq: 700, Q: 0.8, pan, delay: d });
+        }
+        break;
+      case 'static':
+        this.noise({ dur: 1.0, gain: 0.12, type: 'bandpass', freq: 2400, Q: 0.4, pan, hold: 0.3 });
+        this.tone({ type: 'square', freq: 425, dur: 0.4, gain: 0.02, pan, delay: 1.2, filter: { type: 'bandpass', freq: 425, Q: 3 } });
+        break;
+      case 'music':
+        this.musicBoxPhrase(pan, 0.035);
+        break;
+      case 'tapeslow':
+        this.tone({ type: 'sawtooth', freq: 320, freqEnd: 45, dur: 2.0, gain: 0.04, pan, filter: { type: 'bandpass', freq: 600, Q: 1.5 } });
+        this.tone({ type: 'triangle', freq: 659, freqEnd: 120, dur: 2.0, gain: 0.03, pan, wet: 0.4 });
+        break;
+      case 'breath':
+        this.breathing(pan, 0.07);
+        setTimeout(() => this.breathing(pan, 0.06), 1400);
+        break;
+      case 'jingle':
+        this.jingle(pan, 0.12, 8);
+        break;
+    }
+  }
 }

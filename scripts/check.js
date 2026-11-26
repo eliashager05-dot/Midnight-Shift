@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 import { NightSession } from '../src/world/session.js';
 import { ROOMS } from '../src/world/map.js';
-import { MAX_NIGHT } from '../src/config.js';
+import { MAX_NIGHT, CUSTOM_NIGHT, CUSTOM_PRESETS } from '../src/config.js';
 
 let failures = 0;
 const fail = (msg) => {
@@ -15,8 +15,8 @@ const fail = (msg) => {
 };
 const DT = 1 / 30;
 
-function chaosNight(night, seed) {
-  const s = new NightSession({ night, nightSeconds: 240, seed });
+function chaosNight(night, seed, custom) {
+  const s = new NightSession({ night, nightSeconds: 240, seed, custom });
   let r = seed;
   const rnd = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
   const rooms = Object.keys(ROOMS).filter((k) => ROOMS[k].cam);
@@ -76,6 +76,14 @@ checkMap();
 checkMovement();
 const results = { won: 0, lost: 0 };
 for (let n = 1; n <= MAX_NIGHT; n++) for (let i = 0; i < 40; i++) results[chaosNight(n, 500 + n * 131 + i)]++;
+// Custom Night: every preset plus an all-zero night (where nobody may ever move).
+for (const p of CUSTOM_PRESETS) for (let i = 0; i < 15; i++) results[chaosNight(CUSTOM_NIGHT, 900 + i, p)]++;
+{
+  const s = new NightSession({ night: CUSTOM_NIGHT, nightSeconds: 120, seed: 7, custom: { ai: { bear: 0, rabbit: 0, bird: 0, runner: 0 } } });
+  s.on('move', ({ anim }) => fail(`${anim.id} moved at AI level 0`));
+  s.on('runnerStir', () => fail('runner stirred at AI level 0'));
+  while (!s.ended) s.update(DT);
+}
 console.log(`  chaos nights played: ${results.won + results.lost} (won ${results.won}, lost ${results.lost})`);
 if (failures) {
   console.error(`\n${failures} invariant violation(s).`);
